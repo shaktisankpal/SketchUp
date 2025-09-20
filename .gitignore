@@ -1,0 +1,60 @@
+# =========================
+# Global ignores
+# =========================
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency directories
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Coverage reports
+coverage/
+
+# IDE / Editor settings
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# =========================
+# Frontend (React, Vite, Next.js, etc.)
+# =========================
+/frontend/node_modules/
+/frontend/build/
+/frontend/dist/
+/frontend/.env
+/frontend/.env.*.local
+/frontend/.cache
+/frontend/out
+/frontend/.next
+
+# =========================
+# Backend (Express, Node, Mongo, etc.)
+# =========================
+/backend/node_modules/
+/backend/logs
+/backend/*.log
+/backend/.env
+/backend/.env.*.local
+/backend/uploads/
+/backend/tmp/
