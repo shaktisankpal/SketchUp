@@ -5,13 +5,13 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const connectDB = require("./config/db");
 const Room = require("./models/Room");
-const User = require("./models/User"); // Import User model
+const User = require("./models/User");
 const WordList = require("./models/WordList");
-const jwt = require("jsonwebtoken"); // Import JWT
+const jwt = require("jsonwebtoken");
 
 // Import routes
 const wordListRoutes = require("./routes/wordListRoutes");
-const authRoutes = require("./routes/authRoutes"); // ✨ IMPORT auth routes
+const authRoutes = require("./routes/authRoutes");
 
 dotenv.config();
 connectDB();
@@ -29,14 +29,14 @@ const io = new Server(server, {
   },
 });
 
-// ✨ API ROUTES
-app.use("/api/v1/auth", authRoutes); // ✨ USE auth routes
+// API ROUTES
+app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/word-lists", wordListRoutes);
 app.get("/", (req, res) => {
   res.send("hello world from skribbl backend");
 });
 
-// ✨ SOCKET.IO AUTHENTICATION MIDDLEWARE
+// SOCKET.IO AUTHENTICATION MIDDLEWARE
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token;
   if (!token) {
@@ -48,30 +48,36 @@ io.use(async (socket, next) => {
     if (!user) {
       return next(new Error("Authentication error: User not found."));
     }
-    socket.user = user; // Attach user to the socket object
+    socket.user = user;
     next();
   } catch (err) {
     next(new Error("Authentication error: Invalid token."));
   }
 });
 
+// ✨ NEW: Centralized function to get a fully populated, consistent room state.
+const getAuthoritativeRoomState = async (roomId) => {
+  return await Room.findOne({ roomId })
+    .populate("activeWordList", "name")
+    .populate("host", "username")
+    .populate("players.userId", "username");
+};
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.user.username} (${socket.id})`);
 
   // --- USER JOINING LOGIC ---
   socket.on("joinRoom", async ({ roomId }) => {
-    // ✨ Name is no longer needed from client
     try {
       socket.join(roomId);
       const newPlayer = {
-        userId: socket.user._id, // ✨ Use authenticated user ID
-        name: socket.user.username, // ✨ Use authenticated username
+        userId: socket.user._id,
+        name: socket.user.username,
         socketId: socket.id,
       };
       let room = await Room.findOne({ roomId });
 
       if (room) {
-        // Prevent duplicate players
         if (!room.players.some((p) => p.userId.equals(socket.user._id))) {
           room.players.push(newPlayer);
         }
@@ -79,42 +85,35 @@ io.on("connection", (socket) => {
         room = new Room({
           roomId,
           players: [newPlayer],
-          host: socket.user._id, // ✨ Set host using authenticated user ID
+          host: socket.user._id,
         });
       }
 
       await room.save();
 
-      const updatedRoom = await Room.findOne({ roomId })
-        .populate("activeWordList", "name")
-        .populate("host", "username") // Populate host username
-        .populate("players.userId", "username"); // Populate player usernames
+      // ✨ FIXED: Use the centralized function to ensure consistent data shape.
+      const updatedRoom = await getAuthoritativeRoomState(roomId);
 
       io.to(roomId).emit("updateRoomState", updatedRoom);
-      socket.broadcast
-        .to(roomId)
-        .emit("notification", {
-          message: `${socket.user.username} has joined the game.`,
-        });
+      socket.broadcast.to(roomId).emit("notification", {
+        message: `${socket.user.username} has joined the game.`,
+      });
     } catch (error) {
       console.error("Error joining room:", error);
       socket.emit("error", { message: "Could not join the room." });
     }
   });
 
-  // ✨ SOCKET EVENT: Host changes word list
+  // --- HOST-ONLY ACTIONS ---
   socket.on("setWordList", async ({ roomId, listId }) => {
     try {
-      const room = await Room.findOne({ roomId });
-      // ✨ SECURITY CHECK: Verify host status with authenticated user ID
+      let room = await Room.findOne({ roomId });
       if (room && room.host.equals(socket.user._id)) {
         room.activeWordList = listId === "default" ? null : listId;
         await room.save();
 
-        const updatedRoom = await Room.findOne({ roomId }).populate(
-          "activeWordList",
-          "name"
-        );
+        // ✨ FIXED: Use the centralized function.
+        const updatedRoom = await getAuthoritativeRoomState(roomId);
         io.to(roomId).emit("updateRoomState", updatedRoom);
       }
     } catch (error) {
@@ -122,11 +121,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- GAME LOGIC ---
   socket.on("startGame", async ({ roomId }) => {
     try {
       let room = await Room.findOne({ roomId });
-      // ✨ SECURITY CHECK: Verify host status with authenticated user ID
       if (room && room.host.equals(socket.user._id)) {
         let wordsForGame = [];
         if (room.activeWordList) {
@@ -145,7 +142,11 @@ io.on("connection", (socket) => {
         room.gameState.currentRound = 1;
 
         await room.save();
-        io.to(roomId).emit("updateRoomState", room);
+
+        // ✨ FIXED: Use the centralized function to send the populated state.
+        const updatedRoom = await getAuthoritativeRoomState(roomId);
+        io.to(roomId).emit("updateRoomState", updatedRoom);
+
         io.to(roomId).emit("notification", {
           message: "The game has started!",
         });
@@ -155,7 +156,28 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Drawing logic remains the same...
+  // --- DRAWING LOGIC ---
+  socket.on("startDrawing", ({ roomId, element }) => {
+    socket.broadcast.to(roomId).emit("startDrawing", element);
+  });
+
+  socket.on("drawMove", ({ roomId, newPath }) => {
+    socket.broadcast.to(roomId).emit("drawMove", newPath);
+  });
+
+  socket.on("whiteboardData", async ({ roomId, elements }) => {
+    try {
+      await Room.updateOne({ roomId }, { $set: { drawingElements: elements } });
+
+      // ✨ FIXED: Use the centralized function after updating.
+      const updatedRoom = await getAuthoritativeRoomState(roomId);
+      if (updatedRoom) {
+        io.to(roomId).emit("updateRoomState", updatedRoom);
+      }
+    } catch (error) {
+      console.error("Error updating whiteboard data:", error);
+    }
+  });
 
   // --- USER DISCONNECTING LOGIC ---
   socket.on("disconnect", async () => {
@@ -168,20 +190,15 @@ io.on("connection", (socket) => {
 
         if (room.players.length === 0) {
           room.isActive = false;
-          room.drawingElements = [];
         } else if (room.host.equals(socket.user._id)) {
-          // If the host disconnects, assign a new host
           room.host = room.players[0].userId;
         }
 
         await room.save();
-        const updatedRoom = await Room.findOne({
-          roomId: room.roomId,
-        })
-          .populate("activeWordList", "name")
-          .populate("host", "username");
 
-        if (updatedRoom && updatedRoom.isActive) {
+        if (room.isActive) {
+          // ✨ FIXED: Use the centralized function.
+          const updatedRoom = await getAuthoritativeRoomState(room.roomId);
           io.to(room.roomId).emit("updateRoomState", updatedRoom);
           io.to(room.roomId).emit("notification", {
             message: `${playerName} has left the game.`,

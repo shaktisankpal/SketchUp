@@ -7,7 +7,7 @@ import Chat from "../../Components/Chat/Chat";
 const Room = () => {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
-  const { socket, roomState, user } = useAppContext(); // Get authenticated user from context
+  const { socket, roomState, user } = useAppContext();
   const { roomId } = useParams();
 
   const hasJoined = useRef(false);
@@ -18,10 +18,7 @@ const Room = () => {
   const [messages, setMessages] = useState([]);
   const [currentWord, setCurrentWord] = useState("");
 
-  // Simplified join logic
   useEffect(() => {
-    // The socket auth middleware handles user verification.
-    // We just need to tell the server which room to join.
     if (socket && !hasJoined.current) {
       socket.emit("joinRoom", { roomId });
       hasJoined.current = true;
@@ -29,15 +26,15 @@ const Room = () => {
   }, [roomId, socket]);
 
   useEffect(() => {
-    if (roomState?.drawingElements) {
-      setElements(roomState.drawingElements);
-    }
-    setSelectedList(roomState?.activeWordList?._id || "default");
+    if (roomState) {
+      setElements(roomState.drawingElements || []);
+      setSelectedList(roomState.activeWordList?._id || "default");
 
-    if (roomState?.gameState.status === "in_progress") {
-      setCurrentWord(roomState.gameState.wordsForGame?.[0] || "");
-    } else {
-      setCurrentWord("");
+      if (roomState.gameState.status === "in_progress") {
+        setCurrentWord(roomState.gameState.wordsForGame?.[0] || "");
+      } else {
+        setCurrentWord("");
+      }
     }
   }, [roomState]);
 
@@ -56,7 +53,7 @@ const Room = () => {
     }
   }, [socket]);
 
-  // Check if the current authenticated user is the host
+  // This check is now reliable because the backend always sends a populated `host` object.
   const isHost = user?._id === roomState?.host?._id;
 
   useEffect(() => {
@@ -66,7 +63,6 @@ const Room = () => {
           `http://localhost:5000/api/v1/word-lists`,
           {
             headers: {
-              // Add auth header
               Authorization: `Bearer ${user.token}`,
             },
           }
@@ -77,7 +73,6 @@ const Room = () => {
         console.error("Failed to fetch word lists:", error);
       }
     };
-    // Fetch lists if the user is the host and the game is waiting
     if (isHost && roomState?.gameState?.status === "waiting") {
       fetchWordLists();
     }
@@ -135,7 +130,6 @@ const Room = () => {
     if (!currentWord || roomState.gameState.status !== "in_progress") {
       return null;
     }
-    // Non-drawers see underscores
     const display = isHost ? currentWord : currentWord.replace(/\S/g, "_");
     return (
       <div className="text-center font-bold text-3xl tracking-widest text-gray-800 dark:text-white py-4">
@@ -161,6 +155,7 @@ const Room = () => {
           <div
             key={player.socketId}
             className={`px-3 py-1.5 rounded-lg shadow-sm text-sm font-semibold ${
+              // This check is also reliable now.
               player.userId._id === roomState.host._id
                 ? "bg-yellow-200 dark:bg-yellow-700 text-yellow-900 dark:text-yellow-100"
                 : "bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
@@ -180,7 +175,7 @@ const Room = () => {
               type="color"
               value={color}
               onChange={(e) => setColor(e.target.value)}
-              className="w-10 h-10 border-none bg-transparent"
+              className="w-10 h-10 border-none bg-transparent cursor-pointer"
             />
           </div>
           {roomState.gameState.status === "waiting" && (
@@ -223,7 +218,6 @@ const Room = () => {
 
       <div className="flex-grow w-full max-w-7xl mx-auto mt-4">
         <div className="flex flex-col md:flex-row gap-4 h-[70vh] md:h-[65vh]">
-          {/* Whiteboard container */}
           <div className="w-full md:w-3/4 h-full min-h-[300px]">
             <Whiteboard
               canvasRef={canvasRef}
@@ -235,7 +229,6 @@ const Room = () => {
               roomId={roomId}
             />
           </div>
-          {/* Chat container */}
           <div className="w-full md:w-1/4 h-full min-h-[400px]">
             <Chat messages={messages} onSendMessage={handleSendMessage} />
           </div>
