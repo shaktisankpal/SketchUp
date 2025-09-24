@@ -1,38 +1,39 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
+import { useAppContext } from "../../context/AppContext";
 
 const Home = () => {
-  const [name, setName] = useState("");
   const [roomId, setRoomId] = useState("");
+  const { user, logout } = useAppContext();
   const navigate = useNavigate();
 
   const createNewRoom = () => {
-    if (!name.trim()) {
-      return alert("Please enter your name.");
-    }
     const newRoomId = uuidv4().substring(0, 8);
-    navigate(`/room/${newRoomId}`, { state: { name } });
+    navigate(`/room/${newRoomId}`);
   };
 
   const joinRoom = () => {
-    if (!name.trim() || !roomId.trim()) {
-      return alert("Please enter your name and a Room ID.");
+    if (!roomId.trim()) {
+      return alert("Please enter a Room ID.");
     }
-    navigate(`/room/${roomId}`, { state: { name } });
+    navigate(`/room/${roomId}`);
   };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-slate-900 p-4">
       <div className="w-full max-w-md p-6 md:p-8 space-y-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <h1 className="text-3xl font-bold text-center text-gray-800 dark:text-white">
-          The Drawing Game
-        </h1>
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
+            Welcome, {user?.username}!
+          </h1>
+          <p className="text-gray-500 dark:text-gray-400">Ready to draw?</p>
+        </div>
 
         <div className="text-center">
           <button
             onClick={() => navigate("/word-lists")}
-            className="w-full px-4 py-2 font-semibold text-white bg-indigo-500 rounded-md hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition-colors"
+            className="w-full px-4 py-2 font-semibold text-white bg-indigo-500 rounded-md hover:bg-indigo-600"
           >
             Manage My Word Lists
           </button>
@@ -52,21 +53,14 @@ const Home = () => {
         <div className="space-y-4">
           <input
             type="text"
-            placeholder="Enter your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full px-4 py-2 text-gray-700 bg-gray-200 dark:bg-gray-700 dark:text-gray-200 border-transparent border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <input
-            type="text"
-            placeholder="Enter Room ID"
+            placeholder="Enter Room ID to Join"
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
-            className="w-full px-4 py-2 text-gray-700 bg-gray-200 dark:bg-gray-700 dark:text-gray-200 border-transparent border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-2 text-gray-700 bg-gray-200 dark:bg-gray-700 dark:text-gray-200 rounded-md"
           />
           <button
             onClick={joinRoom}
-            className="w-full px-4 py-2 font-semibold text-white bg-blue-500 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+            className="w-full px-4 py-2 font-semibold text-white bg-blue-500 rounded-md hover:bg-blue-600"
           >
             Join Room
           </button>
@@ -76,10 +70,18 @@ const Home = () => {
 
         <button
           onClick={createNewRoom}
-          className="w-full px-4 py-2 font-semibold text-white bg-green-500 rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-colors"
+          className="w-full px-4 py-2 font-semibold text-white bg-green-500 rounded-md hover:bg-green-600"
         >
           Create a New Room
         </button>
+        <div className="text-center pt-4">
+          <button
+            onClick={logout}
+            className="text-sm text-red-500 hover:underline"
+          >
+            Logout
+          </button>
+        </div>
       </div>
     </div>
   );

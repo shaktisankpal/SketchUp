@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 
 const playerSchema = new mongoose.Schema({
+  // ✨ UPDATED: Link player to the User model
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   name: { type: String, required: true },
   socketId: { type: String, required: true },
   score: { type: Number, default: 0 },
@@ -11,10 +13,10 @@ const roomSchema = new mongoose.Schema(
   {
     roomId: { type: String, required: true, unique: true },
     isActive: { type: Boolean, default: true },
-    host: { type: String },
+    // ✨ UPDATED: Host is now a reference to the User model
+    host: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     players: [playerSchema],
     isPrivate: { type: Boolean, default: false },
-    // ✨ NEW: Reference to the selected WordList for the game
     activeWordList: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "WordList",
@@ -29,8 +31,7 @@ const roomSchema = new mongoose.Schema(
       status: { type: String, default: "waiting" },
       currentRound: { type: Number, default: 1 },
       currentWord: { type: String, default: "" },
-      currentDrawer: { type: String },
-      // ✨ NEW: Holds the words for the current game session
+      currentDrawer: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       wordsForGame: { type: [String], default: [] },
     },
     drawingElements: { type: Array },

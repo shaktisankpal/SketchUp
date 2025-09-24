@@ -5,16 +5,18 @@ const {
   getWordListsByUser,
   updateWordList,
   deleteWordList,
-  setRoomWordList,
 } = require("../controllers/wordListController");
+const { protect } = require("../middleware/authMiddleware"); // ✨ IMPORT arotect middleware
 
-// Routes for managing word lists
-router.post("/", createWordList);
-router.get("/user/:userId", getWordListsByUser);
-router.put("/:listId", updateWordList);
-router.delete("/:listId", deleteWordList);
+// ✨ ALL routes are now protected and require a valid JWT
+router
+  .route("/")
+  .post(protect, createWordList)
+  .get(protect, getWordListsByUser);
 
-// Route for setting a room's active word list
-router.put("/room/:roomId", setRoomWordList);
+router
+  .route("/:listId")
+  .put(protect, updateWordList)
+  .delete(protect, deleteWordList);
 
 module.exports = router;

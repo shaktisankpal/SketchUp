@@ -1,22 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import Whiteboard from "../../Components/Whiteboard/Whiteboard";
 import { useAppContext } from "../../context/AppContext";
 import Chat from "../../Components/Chat/Chat";
 
-const TEMP_USER_ID = "user123";
-
 const Room = () => {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
-  const { socket, roomState } = useAppContext();
+  const { socket, roomState, user } = useAppContext(); // Get authenticated user from context
   const { roomId } = useParams();
-  const location = useLocation();
-  const navigate = useNavigate();
 
   const hasJoined = useRef(false);
-  const [name] = useState(location.state?.name || "");
-  const [tool, setTool] = useState("pencil");
   const [color, setColor] = useState("black");
   const [elements, setElements] = useState([]);
   const [wordLists, setWordLists] = useState([]);
@@ -24,16 +18,15 @@ const Room = () => {
   const [messages, setMessages] = useState([]);
   const [currentWord, setCurrentWord] = useState("");
 
+  // Simplified join logic
   useEffect(() => {
-    if (!name) {
-      navigate("/", { state: { roomId } });
-      return;
-    }
-    if (name && roomId && !hasJoined.current) {
-      socket.emit("joinRoom", { name, roomId });
+    // The socket auth middleware handles user verification.
+    // We just need to tell the server which room to join.
+    if (socket && !hasJoined.current) {
+      socket.emit("joinRoom", { roomId });
       hasJoined.current = true;
     }
-  }, [name, roomId, socket, navigate]);
+  }, [roomId, socket]);
 
   useEffect(() => {
     if (roomState?.drawingElements) {
@@ -48,7 +41,6 @@ const Room = () => {
     }
   }, [roomState]);
 
-  // ✨ NEW: Listen for notifications and add them to the chat
   useEffect(() => {
     const handleNotification = (data) => {
       setMessages((prev) => [
@@ -56,19 +48,28 @@ const Room = () => {
         { type: "notification", text: data.message },
       ]);
     };
-    socket.on("notification", handleNotification);
-    return () => {
-      socket.off("notification", handleNotification);
-    };
+    if (socket) {
+      socket.on("notification", handleNotification);
+      return () => {
+        socket.off("notification", handleNotification);
+      };
+    }
   }, [socket]);
 
-  const isHost = socket.id === roomState?.host;
+  // Check if the current authenticated user is the host
+  const isHost = user?._id === roomState?.host?._id;
 
   useEffect(() => {
     const fetchWordLists = async () => {
       try {
         const response = await fetch(
-          `http://localhost:5000/api/v1/word-lists/user/${TEMP_USER_ID}`
+          `http://localhost:5000/api/v1/word-lists`,
+          {
+            headers: {
+              // Add auth header
+              Authorization: `Bearer ${user.token}`,
+            },
+          }
         );
         const data = await response.json();
         setWordLists(data);
@@ -76,10 +77,11 @@ const Room = () => {
         console.error("Failed to fetch word lists:", error);
       }
     };
-    if (isHost) {
+    // Fetch lists if the user is the host and the game is waiting
+    if (isHost && roomState?.gameState?.status === "waiting") {
       fetchWordLists();
     }
-  }, [isHost]);
+  }, [isHost, user?.token, roomState?.gameState?.status]);
 
   const handleWordListChange = (e) => {
     const listId = e.target.value;
@@ -98,17 +100,12 @@ const Room = () => {
     }
   };
 
-  // ✨ UPDATED: Handle message sending with different types
   const handleSendMessage = (messageText) => {
     const timestamp = new Date().toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
 
-    // NOTE: In a real app, this logic would live on the backend.
-    // The client would emit a 'sendMessage' event, and the server would
-    // check the guess and broadcast the message back to all clients.
-    // This is a client-side simulation for UI purposes.
     const isCorrect =
       currentWord &&
       messageText.trim().toLowerCase() === currentWord.toLowerCase();
@@ -116,12 +113,12 @@ const Room = () => {
     if (isCorrect) {
       setMessages((prev) => [
         ...prev,
-        { type: "correct_guess", name, timestamp },
+        { type: "correct_guess", name: user.username, timestamp },
       ]);
     } else {
       setMessages((prev) => [
         ...prev,
-        { type: "user", name, text: messageText, timestamp },
+        { type: "user", name: user.username, text: messageText, timestamp },
       ]);
     }
   };
@@ -164,13 +161,13 @@ const Room = () => {
           <div
             key={player.socketId}
             className={`px-3 py-1.5 rounded-lg shadow-sm text-sm font-semibold ${
-              player.socketId === roomState.host
+              player.userId._id === roomState.host._id
                 ? "bg-yellow-200 dark:bg-yellow-700 text-yellow-900 dark:text-yellow-100"
                 : "bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
             }`}
           >
             {player.name}
-            {player.socketId === roomState.host && " (Host) 👑"}
+            {player.userId._id === roomState.host._id && " (Host) 👑"}
           </div>
         ))}
       </div>
@@ -224,7 +221,6 @@ const Room = () => {
 
       {renderWordDisplay()}
 
-      {/* ✨ RESPONSIVE LAYOUT: Stacks on mobile, side-by-side on desktop */}
       <div className="flex-grow w-full max-w-7xl mx-auto mt-4">
         <div className="flex flex-col md:flex-row gap-4 h-[70vh] md:h-[65vh]">
           {/* Whiteboard container */}
@@ -234,7 +230,6 @@ const Room = () => {
               ctxRef={ctxRef}
               elements={elements}
               setElements={setElements}
-              tool={tool}
               color={color}
               canDraw={isHost}
               roomId={roomId}

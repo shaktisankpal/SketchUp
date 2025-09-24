@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { useAppContext } from "../../context/AppContext";
 
-const TEMP_USER_ID = "user123";
 const API_URL = "http://localhost:5000/api/v1/word-lists";
 
 const WordLists = () => {
@@ -9,15 +9,24 @@ const WordLists = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentList, setCurrentList] = useState(null);
+  const { user } = useAppContext(); // Get user from context for token
 
   useEffect(() => {
-    fetchLists();
-  }, []);
+    if (user?.token) {
+      fetchLists();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.token]);
 
   const fetchLists = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`${API_URL}/user/${TEMP_USER_ID}`);
+      // Send token in authorization header
+      const response = await fetch(API_URL, {
+        headers: {
+          Authorization: `Bearer ${user.token}`,
+        },
+      });
       if (!response.ok) throw new Error("Failed to fetch lists.");
       const data = await response.json();
       setLists(data);
@@ -47,12 +56,12 @@ const WordLists = () => {
     try {
       const response = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          words: wordsArray,
-          createdBy: TEMP_USER_ID,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          // Add auth header
+          Authorization: `Bearer ${user.token}`,
+        },
+        body: JSON.stringify({ name, words: wordsArray }), // No need to send createdBy
       });
       if (!response.ok) throw new Error("Failed to save list.");
       await fetchLists();
@@ -67,6 +76,10 @@ const WordLists = () => {
       try {
         const response = await fetch(`${API_URL}/${listId}`, {
           method: "DELETE",
+          headers: {
+            // Add auth header
+            Authorization: `Bearer ${user.token}`,
+          },
         });
         if (!response.ok) throw new Error("Failed to delete list.");
         await fetchLists();
@@ -92,7 +105,6 @@ const WordLists = () => {
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-slate-900 p-4 sm:p-8">
       <div className="max-w-4xl mx-auto">
-        {/* ✨ RESPONSIVE HEADER */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
             My Custom Word Lists
