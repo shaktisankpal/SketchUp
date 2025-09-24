@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
-import { useAppContext } from "../../context/AppContext";
+import Navbar from "../../Components/Navbar/Navbar";
+import ThemeToggle from "../../Components/ThemeToggle/ThemeToggle"; // ✨ Import ThemeToggle
 
 const Home = () => {
   const [roomId, setRoomId] = useState("");
-  const { user, logout } = useAppContext();
   const navigate = useNavigate();
 
   const createNewRoom = () => {
@@ -21,13 +21,17 @@ const Home = () => {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 dark:bg-slate-900 p-4">
+    <div className="relative flex items-center justify-center min-h-screen bg-gray-100 dark:bg-slate-900 p-4">
+      <Navbar />
+      <ThemeToggle position="top-left" /> {/* ✨ Added to the top-left */}
       <div className="w-full max-w-md p-6 md:p-8 space-y-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-800 dark:text-white">
-            Welcome, {user?.username}!
+            The Drawing Game
           </h1>
-          <p className="text-gray-500 dark:text-gray-400">Ready to draw?</p>
+          <p className="text-gray-500 dark:text-gray-400">
+            Create a room or join a friend's!
+          </p>
         </div>
 
         <div className="text-center">
@@ -74,14 +78,6 @@ const Home = () => {
         >
           Create a New Room
         </button>
-        <div className="text-center pt-4">
-          <button
-            onClick={logout}
-            className="text-sm text-red-500 hover:underline"
-          >
-            Logout
-          </button>
-        </div>
       </div>
     </div>
   );

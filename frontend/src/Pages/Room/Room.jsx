@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import Whiteboard from "../../Components/Whiteboard/Whiteboard";
 import { useAppContext } from "../../context/AppContext";
 import Chat from "../../Components/Chat/Chat";
+import ThemeToggle from "../../Components/ThemeToggle/ThemeToggle";
 
 const Room = () => {
   const canvasRef = useRef(null);
@@ -140,6 +141,7 @@ const Room = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-slate-900 p-2 sm:p-4">
+      <ThemeToggle />
       <div className="text-center mb-4">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-white">
           Room: <span className="font-mono text-blue-500">{roomId}</span>
