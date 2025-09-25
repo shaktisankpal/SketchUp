@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { v4 as uuidv4 } from "uuid";
+import { useAppContext } from "../../context/AppContext";
 import Navbar from "../../Components/Navbar/Navbar";
 import ThemeToggle from "../../Components/ThemeToggle/ThemeToggle";
 import {
@@ -12,22 +13,46 @@ import {
   X,
   Heart,
   BookOpen,
+  Server,
 } from "lucide-react";
 
 const Home = () => {
   const [roomId, setRoomId] = useState("");
+  const [activeRooms, setActiveRooms] = useState([]);
+  const { socket } = useAppContext();
   const navigate = useNavigate();
+
+  // useEffect to manage lobby subscription
+  useEffect(() => {
+    if (socket) {
+      // Tell the server we want to join the lobby
+      socket.emit("joinLobby");
+
+      // Listen for updates to the active rooms list
+      socket.on("update-active-rooms", (rooms) => {
+        setActiveRooms(rooms);
+      });
+
+      // Clean up when the component unmounts
+      return () => {
+        socket.emit("leaveLobby");
+        socket.off("update-active-rooms");
+      };
+    }
+  }, [socket]);
 
   const createNewRoom = () => {
     const newRoomId = uuidv4().substring(0, 8);
     navigate(`/room/${newRoomId}`);
   };
 
-  const joinRoom = () => {
-    if (!roomId.trim()) {
-      return alert("Please enter a Room ID.");
+  // Modified to accept an optional ID from the active rooms list
+  const joinRoom = (idToJoin) => {
+    const roomToNavigate = idToJoin || roomId;
+    if (!roomToNavigate.trim()) {
+      return alert("Please enter or select a Room ID.");
     }
-    navigate(`/room/${roomId}`);
+    navigate(`/room/${roomToNavigate}`);
   };
 
   return (
@@ -44,9 +69,8 @@ const Home = () => {
         </p>
       </div>
 
-      {/* ✨ New three-column grid layout for larger screens */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto items-start">
-        {/* ✨ How to Play Section (Left Column) */}
+        {/* How to Play Section (Left Column) */}
         <div className="bg-white/80 dark:bg-gray-800/50 backdrop-blur-sm p-6 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold text-center mb-4 text-gray-800 dark:text-white flex items-center justify-center gap-2">
             <BookOpen className="w-6 h-6" />
@@ -86,62 +110,104 @@ const Home = () => {
           </ul>
         </div>
 
-        {/* ✨ Main Form (Center Column) */}
-        <div className="w-full max-w-md p-6 md:p-8 space-y-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 mx-auto">
-          <div className="text-center">
-            <Users className="w-12 h-12 mx-auto text-blue-500 mb-4" />
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
-              Get Started
+        {/* Main Content (Center Column) */}
+        <div className="w-full max-w-md space-y-6 mx-auto">
+          <div className="p-6 md:p-8 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 space-y-6">
+            <div className="text-center">
+              <Users className="w-12 h-12 mx-auto text-blue-500 mb-4" />
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+                Get Started
+              </h2>
+            </div>
+
+            <div className="text-center">
+              <button
+                onClick={() => navigate("/word-lists")}
+                className="w-full px-4 py-2 font-semibold text-white bg-indigo-500 rounded-md hover:bg-indigo-600"
+              >
+                Manage My Word Lists
+              </button>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                  Join or Create
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Enter Room ID to Join"
+                value={roomId}
+                onChange={(e) => setRoomId(e.target.value)}
+                className="w-full px-4 py-2 text-gray-700 bg-gray-200 dark:bg-gray-700 dark:text-gray-200 rounded-md"
+              />
+              <button
+                onClick={() => joinRoom()}
+                className="w-full px-4 py-2 font-semibold text-white bg-blue-500 rounded-md hover:bg-blue-600"
+              >
+                Join Room
+              </button>
+            </div>
+
+            <div className="text-center text-gray-500 dark:text-gray-400">
+              OR
+            </div>
+
+            <button
+              onClick={createNewRoom}
+              className="w-full px-4 py-2 font-semibold text-white bg-green-500 rounded-md hover:bg-green-600"
+            >
+              Create a New Room
+            </button>
+          </div>
+
+          {/* Active Rooms List */}
+          <div className="bg-white/80 dark:bg-gray-800/50 backdrop-blur-sm p-6 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
+            <h2 className="text-2xl font-bold text-center mb-4 text-gray-800 dark:text-white flex items-center justify-center gap-2">
+              <Server className="w-6 h-6" />
+              Active Rooms
             </h2>
-          </div>
-
-          <div className="text-center">
-            <button
-              onClick={() => navigate("/word-lists")}
-              className="w-full px-4 py-2 font-semibold text-white bg-indigo-500 rounded-md hover:bg-indigo-600"
-            >
-              Manage My Word Lists
-            </button>
-          </div>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+            <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+              {activeRooms.length > 0 ? (
+                activeRooms.map((room) => (
+                  <div
+                    key={room.roomId}
+                    className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 p-3 rounded-md"
+                  >
+                    <div>
+                      <p className="font-mono text-sm font-semibold text-gray-800 dark:text-white">
+                        {room.roomId}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Players: {room.players.length} /{" "}
+                        {room.gameSettings.maxPlayers}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => joinRoom(room.roomId)}
+                      className="px-3 py-1 text-sm font-semibold text-white bg-green-500 rounded-md hover:bg-green-600 transition-colors"
+                    >
+                      Join
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="text-center text-gray-500 dark:text-gray-400 py-4">
+                  No active rooms right now. <br /> Why not create one?
+                </p>
+              )}
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-                Join or Create
-              </span>
-            </div>
           </div>
-
-          <div className="space-y-4">
-            <input
-              type="text"
-              placeholder="Enter Room ID to Join"
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              className="w-full px-4 py-2 text-gray-700 bg-gray-200 dark:bg-gray-700 dark:text-gray-200 rounded-md"
-            />
-            <button
-              onClick={joinRoom}
-              className="w-full px-4 py-2 font-semibold text-white bg-blue-500 rounded-md hover:bg-blue-600"
-            >
-              Join Room
-            </button>
-          </div>
-
-          <div className="text-center text-gray-500 dark:text-gray-400">OR</div>
-
-          <button
-            onClick={createNewRoom}
-            className="w-full px-4 py-2 font-semibold text-white bg-green-500 rounded-md hover:bg-green-600"
-          >
-            Create a New Room
-          </button>
         </div>
 
-        {/* ✨ Rules Section (Right Column) */}
+        {/* Rules Section (Right Column) */}
         <div className="bg-white/80 dark:bg-gray-800/50 backdrop-blur-sm p-6 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
           <h2 className="text-2xl font-bold text-center mb-4 text-gray-800 dark:text-white flex items-center justify-center gap-2">
             <Check className="w-6 h-6" />

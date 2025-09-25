@@ -55,7 +55,7 @@ io.use(async (socket, next) => {
   }
 });
 
-// ✨ NEW: Centralized function to get a fully populated, consistent room state.
+// Centralized function to get a fully populated, consistent room state.
 const getAuthoritativeRoomState = async (roomId) => {
   return await Room.findOne({ roomId })
     .populate("activeWordList", "name")
@@ -63,10 +63,37 @@ const getAuthoritativeRoomState = async (roomId) => {
     .populate("players.userId", "username");
 };
 
+// Function to get and broadcast the list of active rooms to the lobby
+const broadcastActiveRooms = async () => {
+  try {
+    // Find rooms that are active and have at least one player
+    const activeRooms = await Room.find({
+      isActive: true,
+      "players.0": { $exists: true },
+    }).select("roomId players gameSettings"); // Select only needed fields
+
+    // Send the list to everyone in the 'lobby' room
+    io.to("lobby").emit("update-active-rooms", activeRooms);
+  } catch (error) {
+    console.error("Error broadcasting active rooms:", error);
+  }
+};
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.user.username} (${socket.id})`);
 
-  // --- USER JOINING LOGIC ---
+  // --- LOBBY LOGIC ---
+  socket.on("joinLobby", () => {
+    socket.join("lobby");
+    // Immediately send the current list to the user who just joined the lobby
+    broadcastActiveRooms();
+  });
+
+  socket.on("leaveLobby", () => {
+    socket.leave("lobby");
+  });
+
+  // --- USER JOINING A GAME ROOM LOGIC ---
   socket.on("joinRoom", async ({ roomId }) => {
     try {
       socket.join(roomId);
@@ -91,13 +118,14 @@ io.on("connection", (socket) => {
 
       await room.save();
 
-      // ✨ FIXED: Use the centralized function to ensure consistent data shape.
       const updatedRoom = await getAuthoritativeRoomState(roomId);
-
       io.to(roomId).emit("updateRoomState", updatedRoom);
       socket.broadcast.to(roomId).emit("notification", {
         message: `${socket.user.username} has joined the game.`,
       });
+
+      // After a user joins a room, update the lobby list for everyone else
+      broadcastActiveRooms();
     } catch (error) {
       console.error("Error joining room:", error);
       socket.emit("error", { message: "Could not join the room." });
@@ -111,8 +139,6 @@ io.on("connection", (socket) => {
       if (room && room.host.equals(socket.user._id)) {
         room.activeWordList = listId === "default" ? null : listId;
         await room.save();
-
-        // ✨ FIXED: Use the centralized function.
         const updatedRoom = await getAuthoritativeRoomState(roomId);
         io.to(roomId).emit("updateRoomState", updatedRoom);
       }
@@ -143,7 +169,6 @@ io.on("connection", (socket) => {
 
         await room.save();
 
-        // ✨ FIXED: Use the centralized function to send the populated state.
         const updatedRoom = await getAuthoritativeRoomState(roomId);
         io.to(roomId).emit("updateRoomState", updatedRoom);
 
@@ -168,8 +193,6 @@ io.on("connection", (socket) => {
   socket.on("whiteboardData", async ({ roomId, elements }) => {
     try {
       await Room.updateOne({ roomId }, { $set: { drawingElements: elements } });
-
-      // ✨ FIXED: Use the centralized function after updating.
       const updatedRoom = await getAuthoritativeRoomState(roomId);
       if (updatedRoom) {
         io.to(roomId).emit("updateRoomState", updatedRoom);
@@ -197,13 +220,15 @@ io.on("connection", (socket) => {
         await room.save();
 
         if (room.isActive) {
-          // ✨ FIXED: Use the centralized function.
           const updatedRoom = await getAuthoritativeRoomState(room.roomId);
           io.to(room.roomId).emit("updateRoomState", updatedRoom);
           io.to(room.roomId).emit("notification", {
             message: `${playerName} has left the game.`,
           });
         }
+
+        // After a user disconnects, update the lobby list
+        broadcastActiveRooms();
       }
     } catch (error) {
       console.error("Error on disconnect:", error);
