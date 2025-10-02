@@ -66,16 +66,42 @@ const getAuthoritativeRoomState = async (roomId) => {
 // Function to get and broadcast the list of active rooms to the lobby
 const broadcastActiveRooms = async () => {
   try {
-    // Find rooms that are active and have at least one player
     const activeRooms = await Room.find({
       isActive: true,
       "players.0": { $exists: true },
-    }).select("roomId players gameSettings"); // Select only needed fields
-
-    // Send the list to everyone in the 'lobby' room
+    }).select("roomId players gameSettings");
     io.to("lobby").emit("update-active-rooms", activeRooms);
   } catch (error) {
     console.error("Error broadcasting active rooms:", error);
+  }
+};
+
+const handleLeaveRoom = async (socket) => {
+  try {
+    let room = await Room.findOne({ "players.socketId": socket.id });
+    if (room) {
+      const playerName = socket.user.username || "A player";
+      room.players = room.players.filter((p) => p.socketId !== socket.id);
+
+      if (room.players.length === 0) {
+        room.isActive = false;
+      } else if (room.host.equals(socket.user._id)) {
+        room.host = room.players[0].userId;
+      }
+
+      await room.save();
+
+      if (room.isActive) {
+        const updatedRoom = await getAuthoritativeRoomState(room.roomId);
+        io.to(room.roomId).emit("updateRoomState", updatedRoom);
+        io.to(room.roomId).emit("notification", {
+          message: `${playerName} has left the game.`,
+        });
+      }
+      broadcastActiveRooms();
+    }
+  } catch (error) {
+    console.error("Error on handling leave/disconnect:", error);
   }
 };
 
@@ -85,7 +111,6 @@ io.on("connection", (socket) => {
   // --- LOBBY LOGIC ---
   socket.on("joinLobby", () => {
     socket.join("lobby");
-    // Immediately send the current list to the user who just joined the lobby
     broadcastActiveRooms();
   });
 
@@ -93,7 +118,7 @@ io.on("connection", (socket) => {
     socket.leave("lobby");
   });
 
-  // --- USER JOINING A GAME ROOM LOGIC ---
+  // --- ROOM LOGIC ---
   socket.on("joinRoom", async ({ roomId }) => {
     try {
       socket.join(roomId);
@@ -105,12 +130,11 @@ io.on("connection", (socket) => {
       let room = await Room.findOne({ roomId });
 
       if (room) {
-        // Rejoin logic or add new player
         const playerIndex = room.players.findIndex((p) =>
           p.userId.equals(socket.user._id)
         );
         if (playerIndex > -1) {
-          room.players[playerIndex].socketId = socket.id; // Update socket ID on reconnect
+          room.players[playerIndex].socketId = socket.id;
         } else {
           room.players.push(newPlayer);
         }
@@ -123,14 +147,11 @@ io.on("connection", (socket) => {
       }
 
       await room.save();
-
       const updatedRoom = await getAuthoritativeRoomState(roomId);
       io.to(roomId).emit("updateRoomState", updatedRoom);
       socket.broadcast.to(roomId).emit("notification", {
         message: `${socket.user.username} has joined the game.`,
       });
-
-      // After a user joins a room, update the lobby list for everyone else
       broadcastActiveRooms();
     } catch (error) {
       console.error("Error joining room:", error);
@@ -138,7 +159,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- HOST-ONLY ACTIONS ---
+  // --- HOST ACTIONS ---
   socket.on("setWordList", async ({ roomId, listId }) => {
     try {
       let room = await Room.findOne({ roomId });
@@ -156,39 +177,29 @@ io.on("connection", (socket) => {
   socket.on("startGame", async ({ roomId }) => {
     try {
       let room = await Room.findOne({ roomId });
-      // Only host can start the game
       if (room && room.host.equals(socket.user._id)) {
         let wordsForGame = [];
         if (room.activeWordList) {
           const wordList = await WordList.findById(room.activeWordList);
           wordsForGame = wordList ? [...wordList.words] : [];
         }
-
-        // Default words if no list is selected or list is empty
         if (wordsForGame.length === 0) {
           wordsForGame = ["Cat", "Dog", "Sun", "House", "Tree", "Car"];
         }
-
-        // Reset player states for the new game
         room.players.forEach((p) => {
           p.score = 0;
           p.hasGuessedCorrectly = false;
         });
-
-        // Set game state
         room.gameState.wordsForGame = wordsForGame.sort(
           () => Math.random() - 0.5
         );
         room.gameState.status = "in_progress";
         room.gameState.currentRound = 1;
-        room.gameState.currentWord = room.gameState.wordsForGame[0] || ""; // Set first word
-        room.drawingElements = []; // Clear canvas
-
+        room.gameState.currentWord = room.gameState.wordsForGame[0] || "";
+        room.drawingElements = [];
         await room.save();
-
         const updatedRoom = await getAuthoritativeRoomState(roomId);
         io.to(roomId).emit("updateRoomState", updatedRoom);
-
         io.to(roomId).emit("notification", {
           message: "The game has started!",
         });
@@ -202,36 +213,25 @@ io.on("connection", (socket) => {
   socket.on("sendMessage", async ({ roomId, message }) => {
     try {
       const room = await Room.findOne({ roomId });
-      if (!room || room.gameState.status !== "in_progress") {
-        return; // Can't chat if game isn't running
-      }
-
+      if (!room || room.gameState.status !== "in_progress") return;
       const player = room.players.find((p) => p.userId.equals(socket.user._id));
-
-      // Prevent host or people who already guessed from guessing again
       if (
         !player ||
         player.hasGuessedCorrectly ||
         room.host.equals(socket.user._id)
-      ) {
+      )
         return;
-      }
-
       const isCorrect =
         message.trim().toLowerCase() ===
         room.gameState.currentWord.toLowerCase();
-
       if (isCorrect) {
         player.hasGuessedCorrectly = true;
-        player.score += 100; // Basic scoring
+        player.score += 100;
         await room.save();
-
         io.to(roomId).emit("correctGuess", { name: player.name });
-
         const updatedRoom = await getAuthoritativeRoomState(roomId);
         io.to(roomId).emit("updateRoomState", updatedRoom);
       } else {
-        // Broadcast regular message
         io.to(roomId).emit("receiveMessage", {
           name: player.name,
           text: message,
@@ -246,14 +246,14 @@ io.on("connection", (socket) => {
   socket.on("startDrawing", ({ roomId, element }) => {
     socket.broadcast.to(roomId).emit("startDrawing", element);
   });
-
   socket.on("drawMove", ({ roomId, newPath }) => {
     socket.broadcast.to(roomId).emit("drawMove", newPath);
   });
 
+  // ✨ FIX: This event now saves to the DB AND broadcasts the final state.
+  // This is the essential step that ensures all clients are synchronized.
   socket.on("whiteboardData", async ({ roomId, elements }) => {
     try {
-      // Only host can update whiteboard data
       const room = await Room.findOne({ roomId });
       if (room && room.host.equals(socket.user._id)) {
         await Room.updateOne(
@@ -261,8 +261,7 @@ io.on("connection", (socket) => {
           { $set: { drawingElements: elements } }
         );
 
-        // ✨ FIX: Broadcast the updated state to all clients in the room
-        // This ensures everyone's whiteboard is synchronized after each stroke.
+        // Re-broadcast the authoritative state to ensure everyone is in sync.
         const updatedRoom = await getAuthoritativeRoomState(roomId);
         if (updatedRoom) {
           io.to(roomId).emit("updateRoomState", updatedRoom);
@@ -273,38 +272,13 @@ io.on("connection", (socket) => {
     }
   });
 
-  // --- USER DISCONNECTING LOGIC ---
-  socket.on("disconnect", async () => {
-    try {
-      let room = await Room.findOne({ "players.socketId": socket.id });
-      if (room) {
-        const playerName = socket.user.username || "A player";
+  // --- LEAVE/DISCONNECT LOGIC ---
+  socket.on("leaveRoom", () => {
+    handleLeaveRoom(socket);
+  });
 
-        room.players = room.players.filter((p) => p.socketId !== socket.id);
-
-        if (room.players.length === 0) {
-          room.isActive = false; // Make room inactive if empty
-        } else if (room.host.equals(socket.user._id)) {
-          // If host leaves, assign a new host
-          room.host = room.players[0].userId;
-        }
-
-        await room.save();
-
-        if (room.isActive) {
-          const updatedRoom = await getAuthoritativeRoomState(room.roomId);
-          io.to(room.roomId).emit("updateRoomState", updatedRoom);
-          io.to(room.roomId).emit("notification", {
-            message: `${playerName} has left the game.`,
-          });
-        }
-
-        // After a user disconnects, update the lobby list
-        broadcastActiveRooms();
-      }
-    } catch (error) {
-      console.error("Error on disconnect:", error);
-    }
+  socket.on("disconnect", () => {
+    handleLeaveRoom(socket);
   });
 });
 
