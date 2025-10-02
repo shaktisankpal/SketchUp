@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAppContext } from "../../context/AppContext";
 
-const API_URL = "http://localhost:5000/api/v1/word-lists";
+const API_URL = `${import.meta.env.VITE_API_URL}/api/v1/word-lists`;
 
 const WordLists = () => {
   const [lists, setLists] = useState([]);

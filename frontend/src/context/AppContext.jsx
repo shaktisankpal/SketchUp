@@ -24,7 +24,7 @@ export const AppContextProvider = ({ children }) => {
   const socket = useMemo(() => {
     if (!user?.token) return null; // Don't connect if there is no token
 
-    return io("http://localhost:5000", {
+    return io(import.meta.env.VITE_API_URL, {
       // ✨ Send token for authentication
       auth: {
         token: user.token,

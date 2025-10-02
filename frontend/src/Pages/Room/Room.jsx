@@ -116,7 +116,7 @@ const Room = () => {
       if (!user?.token) return;
       try {
         const response = await fetch(
-          `http://localhost:5000/api/v1/word-lists`,
+          `${import.meta.env.VITE_API_URL}/api/v1/word-lists`,
           { headers: { Authorization: `Bearer ${user.token}` } }
         );
         const data = await response.json();
