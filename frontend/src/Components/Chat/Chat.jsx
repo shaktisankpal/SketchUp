@@ -4,6 +4,7 @@ import { Send, CheckCircle, Info } from "lucide-react";
 // Helper function to get a consistent color from a string (for avatars)
 const getAvatarColor = (name) => {
   let hash = 0;
+  if (!name) return "#cccccc";
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
@@ -44,7 +45,7 @@ const Message = ({ msg }) => {
         className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm"
         style={{ backgroundColor: getAvatarColor(name) }}
       >
-        {name.charAt(0).toUpperCase()}
+        {name?.charAt(0).toUpperCase()}
       </div>
       <div className="flex-1">
         <div className="flex items-baseline gap-2">
@@ -55,7 +56,7 @@ const Message = ({ msg }) => {
             {timestamp}
           </span>
         </div>
-        <p className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg p-2.5 text-sm mt-1">
+        <p className="text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg p-2.5 text-sm mt-1 break-words">
           {text}
         </p>
       </div>
@@ -63,7 +64,8 @@ const Message = ({ msg }) => {
   );
 };
 
-const Chat = ({ messages, onSendMessage }) => {
+// ✨ UPDATED: Component now accepts `isDisabled` and `placeholder` props
+const Chat = ({ messages, onSendMessage, isDisabled, placeholder }) => {
   const [message, setMessage] = useState("");
   const messagesEndRef = useRef(null);
 
@@ -77,7 +79,7 @@ const Chat = ({ messages, onSendMessage }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (message.trim()) {
+    if (message.trim() && !isDisabled) {
       onSendMessage(message);
       setMessage("");
     }
@@ -104,13 +106,17 @@ const Chat = ({ messages, onSendMessage }) => {
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your guess..."
-            className="flex-1 px-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 transition-shadow"
+            // ✨ UPDATED: Placeholder now comes from props
+            placeholder={placeholder}
+            className="flex-1 px-4 py-2 border rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white dark:border-gray-600 transition-shadow disabled:cursor-not-allowed disabled:opacity-60"
+            // ✨ UPDATED: Disabled state now comes from props
+            disabled={isDisabled}
           />
           <button
             type="submit"
-            className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors flex-shrink-0 disabled:bg-gray-400"
-            disabled={!message.trim()}
+            className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors flex-shrink-0 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            // ✨ UPDATED: Disabled state now comes from props
+            disabled={isDisabled || !message.trim()}
           >
             <Send size={18} />
           </button>

@@ -105,7 +105,13 @@ io.on("connection", (socket) => {
       let room = await Room.findOne({ roomId });
 
       if (room) {
-        if (!room.players.some((p) => p.userId.equals(socket.user._id))) {
+        // Rejoin logic or add new player
+        const playerIndex = room.players.findIndex((p) =>
+          p.userId.equals(socket.user._id)
+        );
+        if (playerIndex > -1) {
+          room.players[playerIndex].socketId = socket.id; // Update socket ID on reconnect
+        } else {
           room.players.push(newPlayer);
         }
       } else {
@@ -150,6 +156,7 @@ io.on("connection", (socket) => {
   socket.on("startGame", async ({ roomId }) => {
     try {
       let room = await Room.findOne({ roomId });
+      // Only host can start the game
       if (room && room.host.equals(socket.user._id)) {
         let wordsForGame = [];
         if (room.activeWordList) {
@@ -157,15 +164,25 @@ io.on("connection", (socket) => {
           wordsForGame = wordList ? [...wordList.words] : [];
         }
 
+        // Default words if no list is selected or list is empty
         if (wordsForGame.length === 0) {
           wordsForGame = ["Cat", "Dog", "Sun", "House", "Tree", "Car"];
         }
 
+        // Reset player states for the new game
+        room.players.forEach((p) => {
+          p.score = 0;
+          p.hasGuessedCorrectly = false;
+        });
+
+        // Set game state
         room.gameState.wordsForGame = wordsForGame.sort(
           () => Math.random() - 0.5
         );
         room.gameState.status = "in_progress";
         room.gameState.currentRound = 1;
+        room.gameState.currentWord = room.gameState.wordsForGame[0] || ""; // Set first word
+        room.drawingElements = []; // Clear canvas
 
         await room.save();
 
@@ -181,6 +198,50 @@ io.on("connection", (socket) => {
     }
   });
 
+  // --- CHAT LOGIC ---
+  socket.on("sendMessage", async ({ roomId, message }) => {
+    try {
+      const room = await Room.findOne({ roomId });
+      if (!room || room.gameState.status !== "in_progress") {
+        return; // Can't chat if game isn't running
+      }
+
+      const player = room.players.find((p) => p.userId.equals(socket.user._id));
+
+      // Prevent host or people who already guessed from guessing again
+      if (
+        !player ||
+        player.hasGuessedCorrectly ||
+        room.host.equals(socket.user._id)
+      ) {
+        return;
+      }
+
+      const isCorrect =
+        message.trim().toLowerCase() ===
+        room.gameState.currentWord.toLowerCase();
+
+      if (isCorrect) {
+        player.hasGuessedCorrectly = true;
+        player.score += 100; // Basic scoring
+        await room.save();
+
+        io.to(roomId).emit("correctGuess", { name: player.name });
+
+        const updatedRoom = await getAuthoritativeRoomState(roomId);
+        io.to(roomId).emit("updateRoomState", updatedRoom);
+      } else {
+        // Broadcast regular message
+        io.to(roomId).emit("receiveMessage", {
+          name: player.name,
+          text: message,
+        });
+      }
+    } catch (error) {
+      console.error("Error handling message:", error);
+    }
+  });
+
   // --- DRAWING LOGIC ---
   socket.on("startDrawing", ({ roomId, element }) => {
     socket.broadcast.to(roomId).emit("startDrawing", element);
@@ -192,10 +253,20 @@ io.on("connection", (socket) => {
 
   socket.on("whiteboardData", async ({ roomId, elements }) => {
     try {
-      await Room.updateOne({ roomId }, { $set: { drawingElements: elements } });
-      const updatedRoom = await getAuthoritativeRoomState(roomId);
-      if (updatedRoom) {
-        io.to(roomId).emit("updateRoomState", updatedRoom);
+      // Only host can update whiteboard data
+      const room = await Room.findOne({ roomId });
+      if (room && room.host.equals(socket.user._id)) {
+        await Room.updateOne(
+          { roomId },
+          { $set: { drawingElements: elements } }
+        );
+
+        // ✨ FIX: Broadcast the updated state to all clients in the room
+        // This ensures everyone's whiteboard is synchronized after each stroke.
+        const updatedRoom = await getAuthoritativeRoomState(roomId);
+        if (updatedRoom) {
+          io.to(roomId).emit("updateRoomState", updatedRoom);
+        }
       }
     } catch (error) {
       console.error("Error updating whiteboard data:", error);
@@ -212,8 +283,9 @@ io.on("connection", (socket) => {
         room.players = room.players.filter((p) => p.socketId !== socket.id);
 
         if (room.players.length === 0) {
-          room.isActive = false;
+          room.isActive = false; // Make room inactive if empty
         } else if (room.host.equals(socket.user._id)) {
+          // If host leaves, assign a new host
           room.host = room.players[0].userId;
         }
 

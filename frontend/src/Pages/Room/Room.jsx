@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import Whiteboard from "../../Components/Whiteboard/Whiteboard";
 import { useAppContext } from "../../context/AppContext";
 import Chat from "../../Components/Chat/Chat";
 import ThemeToggle from "../../Components/ThemeToggle/ThemeToggle";
+import { Crown } from "lucide-react";
 
 const Room = () => {
   const canvasRef = useRef(null);
@@ -17,8 +18,8 @@ const Room = () => {
   const [wordLists, setWordLists] = useState([]);
   const [selectedList, setSelectedList] = useState("default");
   const [messages, setMessages] = useState([]);
-  const [currentWord, setCurrentWord] = useState("");
 
+  // Join room effect
   useEffect(() => {
     if (socket && !hasJoined.current) {
       socket.emit("joinRoom", { roomId });
@@ -26,39 +27,89 @@ const Room = () => {
     }
   }, [roomId, socket]);
 
+  // Update local state from global roomState
   useEffect(() => {
     if (roomState) {
       setElements(roomState.drawingElements || []);
       setSelectedList(roomState.activeWordList?._id || "default");
-
-      if (roomState.gameState.status === "in_progress") {
-        setCurrentWord(roomState.gameState.wordsForGame?.[0] || "");
-      } else {
-        setCurrentWord("");
-      }
     }
   }, [roomState]);
 
+  // Socket listeners for chat and notifications
   useEffect(() => {
+    if (!socket) return;
+
+    const getTimestamp = () =>
+      new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
     const handleNotification = (data) => {
       setMessages((prev) => [
         ...prev,
-        { type: "notification", text: data.message },
+        { type: "notification", text: data.message, timestamp: getTimestamp() },
       ]);
     };
-    if (socket) {
-      socket.on("notification", handleNotification);
-      return () => {
-        socket.off("notification", handleNotification);
-      };
-    }
+
+    const handleReceiveMessage = (data) => {
+      setMessages((prev) => [
+        ...prev,
+        { ...data, type: "user", timestamp: getTimestamp() },
+      ]);
+    };
+
+    const handleCorrectGuess = (data) => {
+      setMessages((prev) => [
+        ...prev,
+        { ...data, type: "correct_guess", timestamp: getTimestamp() },
+      ]);
+    };
+
+    socket.on("notification", handleNotification);
+    socket.on("receiveMessage", handleReceiveMessage);
+    socket.on("correctGuess", handleCorrectGuess);
+
+    return () => {
+      socket.off("notification", handleNotification);
+      socket.off("receiveMessage", handleReceiveMessage);
+      socket.off("correctGuess", handleCorrectGuess);
+    };
   }, [socket]);
 
-  // This check is now reliable because the backend always sends a populated `host` object.
-  const isHost = user?._id === roomState?.host?._id;
+  // ✨ UPDATED: This memo now calculates a status object with a reason
+  const { isHost, currentWord, chatStatus } = useMemo(() => {
+    const hostId = roomState?.host?._id;
+    const _isHost = user?._id === hostId;
 
+    const _currentWord = roomState?.gameState?.currentWord || "";
+
+    const currentPlayer = roomState?.players.find(
+      (p) => p.userId._id === user?._id
+    );
+
+    let isDisabled = false;
+    let reason = "Type your guess...";
+
+    if (roomState?.gameState?.status !== "in_progress") {
+      isDisabled = true;
+      reason = "The game has not started yet.";
+    } else if (_isHost) {
+      isDisabled = true;
+      reason = "You are the drawer! You cannot guess.";
+    } else if (currentPlayer?.hasGuessedCorrectly) {
+      isDisabled = true;
+      reason = "You already guessed the word!";
+    }
+
+    return {
+      isHost: _isHost,
+      currentWord: _currentWord,
+      chatStatus: { isDisabled, reason },
+    };
+  }, [roomState, user]);
+
+  // Fetch word lists for the host
   useEffect(() => {
     const fetchWordLists = async () => {
+      if (!user?.token) return;
       try {
         const response = await fetch(
           `http://localhost:5000/api/v1/word-lists`,
@@ -82,40 +133,23 @@ const Room = () => {
   const handleWordListChange = (e) => {
     const listId = e.target.value;
     setSelectedList(listId);
-    socket.emit("setWordList", { roomId, listId });
+    if (socket) socket.emit("setWordList", { roomId, listId });
   };
 
   const handleStartGame = () => {
-    socket.emit("startGame", { roomId });
+    if (socket) socket.emit("startGame", { roomId });
   };
 
   const handleClearCanvas = () => {
-    if (isHost) {
+    if (isHost && socket) {
       setElements([]);
       socket.emit("whiteboardData", { roomId, elements: [] });
     }
   };
 
   const handleSendMessage = (messageText) => {
-    const timestamp = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
-    const isCorrect =
-      currentWord &&
-      messageText.trim().toLowerCase() === currentWord.toLowerCase();
-
-    if (isCorrect) {
-      setMessages((prev) => [
-        ...prev,
-        { type: "correct_guess", name: user.username, timestamp },
-      ]);
-    } else {
-      setMessages((prev) => [
-        ...prev,
-        { type: "user", name: user.username, text: messageText, timestamp },
-      ]);
+    if (socket) {
+      socket.emit("sendMessage", { roomId, message: messageText });
     }
   };
 
@@ -156,15 +190,21 @@ const Room = () => {
         {roomState.players.map((player) => (
           <div
             key={player.socketId}
-            className={`px-3 py-1.5 rounded-lg shadow-sm text-sm font-semibold ${
-              // This check is also reliable now.
+            className={`px-3 py-1.5 rounded-lg shadow-sm text-sm font-semibold flex items-center gap-2 ${
               player.userId._id === roomState.host._id
                 ? "bg-yellow-200 dark:bg-yellow-700 text-yellow-900 dark:text-yellow-100"
                 : "bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
             }`}
           >
-            {player.name}
-            {player.userId._id === roomState.host._id && " (Host) 👑"}
+            <span>
+              {player.name} - {player.score}
+            </span>
+            {player.userId._id === roomState.host._id && (
+              <Crown
+                size={16}
+                className="text-yellow-600 dark:text-yellow-400"
+              />
+            )}
           </div>
         ))}
       </div>
@@ -232,7 +272,13 @@ const Room = () => {
             />
           </div>
           <div className="w-full md:w-1/4 h-full min-h-[400px]">
-            <Chat messages={messages} onSendMessage={handleSendMessage} />
+            {/* ✨ UPDATED: Passing down isDisabled and a dynamic placeholder */}
+            <Chat
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isDisabled={chatStatus.isDisabled}
+              placeholder={chatStatus.reason}
+            />
           </div>
         </div>
       </div>
