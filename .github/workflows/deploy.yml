@@ -1,0 +1,59 @@
+# .github/workflows/deploy.yml
+
+name: Test and Deploy to Render
+
+# This workflow runs on every push to the 'main' branch
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # Job for testing and deploying the BACKEND
+  test_and_deploy_backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: ./backend
+
+      - name: Run backend tests
+        run: npm test
+        working-directory: ./backend
+
+      - name: Trigger Render Deploy (Backend)
+        # This step only runs if the tests above are successful
+        if: success()
+        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}
+
+  # Job for testing and deploying the FRONTEND
+  test_and_deploy_frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ./frontend
+
+      - name: Run frontend tests
+        run: npm test
+        working-directory: ./frontend
+
+      - name: Trigger Render Deploy (Frontend)
+        # This step only runs if the tests above are successful
+        if: success()
+        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}
