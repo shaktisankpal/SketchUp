@@ -1,4 +1,4 @@
-# 🎨 Scribble.io Clone (MERN Stack)
+# 🎨 Sketchup – A [skribbl.io](https://skribbl.io) Clone
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node](https://img.shields.io/badge/node-%3E%3D%2014.0.0-brightgreen)
